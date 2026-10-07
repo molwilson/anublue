@@ -1,5 +1,5 @@
 ---
-title: "2025-26 Q4 Data Report"
+title: "2026-27 Q1 Data Report"
 author: "Molly Wilson"
 date: "2026-07-01"
 output: 
@@ -65,15 +65,15 @@ print_table <- function(x, options = list(pageLength = 10)) {
 ```{r}
 # quarterly settings
 q_label <- "Q4 2025-26"
-q_start <- "2026-06-01"
-q_end <- "2026-08-15" # extended for nursery work
+q_start <- "2026-07-01"
+q_end <- "2026-09-30"
 
 # biannual settings
-b_start <- "2025-02-01"
-b_end <- "2026-08-15" # extended for nursery work
+b_start <- "2025-07-01"
+b_end <- "2026-09-30"
 
 # fig directory
-fig_dir <- here("restoration_monitoring", "figs", "25-26_Q4")
+fig_dir <- here("restoration_monitoring", "figs", "26-27_Q1")
 ```
 
 
@@ -85,7 +85,7 @@ fig_dir <- here("restoration_monitoring", "figs", "25-26_Q4")
 nursery_mon <- read_excel(here("restoration_monitoring", "data_raw", "Genotype tracking.xlsx"), sheet = "nursery monitoring") %>% 
   clean_names() %>%
   mutate(date = ymd(as.character(date)),
-         nursery = if_else(nursery == "TPB", "Ten Pound Bay", nursery)) %>%
+         nursery = if_else(nursery == "TPB", "Ten Pound Bay Nursery", nursery)) %>%
   filter(date >= ymd(q_start) & date <= ymd(q_end)) %>%
   mutate(species = substr(genotype, 1, 4),
          across(starts_with("n_"), ~ replace_na(.x, 0)),
@@ -96,13 +96,17 @@ nurs_mon_last <- nursery_mon %>%
   slice_max(date, n = 1) %>% # keep row(s) with max date per nursery, assumes all monitoring per nursery done in one day
   ungroup() %>%
   select(date, nursery, location, species, genotype, starts_with("n_"))
+
+nurs_mon_last_dates <- nurs_mon_last %>%
+  group_by(nursery, date) %>%
+  summarize()
 ```
 
 ### By nursery
 
 ```{r}
 frags_nursery <- nurs_mon_last %>%
-  group_by(nursery) %>%
+  group_by(nursery, date) %>%
   summarize(n_tot = sum(n_tot),
             n_healthy = sum(n_healthy),
             n_bleached = sum(n_bleached),
@@ -123,7 +127,7 @@ frags_nursery <- nurs_mon_last %>%
               filter(!str_detect(genotype, "XX")) %>% # don't want unknown genotypes to double count
               group_by(nursery) %>%
               summarize(n_genotypes = n())) %>%
-  select(nursery, n_frags = n_tot, p_healthy, p_stressed, p_diseased, n_spp, n_genotypes)
+  select(nursery, date, n_frags = n_tot, p_healthy, p_stressed, p_diseased, n_spp, n_genotypes)
 
 kable(frags_nursery)
 ```
@@ -192,9 +196,9 @@ map_york <- read_excel(here("restoration_monitoring", "data_raw", "Nursery map.x
                values_to = "genotype", 
                values_drop_na = TRUE) %>%
   unite(location, col, row, sep = "", remove = TRUE, na.rm = TRUE) %>%
-  mutate(nursery = "York")
+  mutate(nursery = "York Island Nursery")
 
-map_tpb <- read_excel(here("restoration_monitoring", "data_raw", "Nursery map.xlsx"), sheet = "TPB", 
+map_tpb <- read_excel(here("restoration_monitoring", "data_raw", "Nursery map.xlsx"), sheet = "Ten Pound Bay", 
                    range = "A1:C13", col_names = FALSE, .name_repair = letter_names) %>%
   pivot_longer(cols = everything(),
                names_to = NULL,
@@ -206,7 +210,7 @@ map_tpb <- read_excel(here("restoration_monitoring", "data_raw", "Nursery map.xl
   ) %>%
   # separate_rows(genotype, sep = "\\s*/\\s*")
   filter(genotype != "") %>% # remove empty structures
-  bind_rows(read_excel(here("restoration_monitoring", "data_raw", "Nursery map.xlsx"), sheet = "TPB", 
+  bind_rows(read_excel(here("restoration_monitoring", "data_raw", "Nursery map.xlsx"), sheet = "Ten Pound Bay", 
                        range = "A16:H23", col_names = FALSE) %>% 
               pivot_longer(
                 cols = everything(),
@@ -216,7 +220,7 @@ map_tpb <- read_excel(here("restoration_monitoring", "data_raw", "Nursery map.xl
               distinct() %>%
               mutate(location = "ST")
   ) %>%
-  mutate(nursery = "Ten Pound Bay")
+  mutate(nursery = "Ten Pound Bay Nursery")
 
 map_cades_sculptures <- read_excel(here("restoration_monitoring", "data_raw", "Nursery map.xlsx"), sheet = "Cades Sculptures",
                    range = "A1:B8", col_names = FALSE, .name_repair = letter_names) %>%
@@ -227,9 +231,9 @@ map_cades_sculptures <- read_excel(here("restoration_monitoring", "data_raw", "N
   mutate(
     location = str_extract(genotype, "^[A-Z]\\d+"),
     genotype = str_remove(genotype, "^[A-Z]\\d+\\s*"),
-    nursery = "Cades Sculptures")
+    nursery = "Cades Sculpture Nursery")
 
-map_jumby <- read_excel(here("restoration_monitoring", "data_raw", "Nursery map.xlsx"), sheet = "Jumby",
+map_jumby <- read_excel(here("restoration_monitoring", "data_raw", "Nursery map.xlsx"), sheet = "Jumby Bay",
                    range = "A1:C8", col_names = FALSE, .name_repair = letter_names) %>%
   pivot_longer(cols = everything(),
                names_to = NULL,
@@ -238,7 +242,7 @@ map_jumby <- read_excel(here("restoration_monitoring", "data_raw", "Nursery map.
   mutate(
     location = str_extract(genotype, "^[A-Z]\\d+"),
     genotype = str_remove(genotype, "^[A-Z]\\d+\\s*"),
-    nursery = "Jumby")
+    nursery = "Jumby Bay Nursery")
 
 nursery_maps <- bind_rows(map_york, map_tpb, map_cades_sculptures, map_jumby) %>%
   # mutate(genotype = strsplit(as.character(genotype), " / ")) %>% 
@@ -261,10 +265,8 @@ nursery_locations <- nurs_mon_last %>%
               group_by(genotype, nursery) %>%
               summarise(location = paste(location, collapse=", ")) %>%
               pivot_wider(names_from = nursery, values_from = location) %>%
-              rename(york_locations = "York",
-                     tpb_locations = "Ten Pound Bay",
-                     cades_locations = "Cades Sculptures",
-                     jumby_locations = "Jumby")
+  clean_names() %>%
+  rename_with(~ str_replace_all(.x, "nursery", "locations"))
 ```
 
 
@@ -279,12 +281,7 @@ diff_nmap <- anti_join(nursery_maps %>% select(nursery, location, genotype),
 
 diff_nmon <- anti_join(nurs_mon_last %>% select(nursery, location, genotype), 
                        nursery_maps %>% select(nursery, location, genotype), 
-                       by = c("nursery", "location", "genotype")) %>%
-  anti_join( # removing GB locations because those are not in maps by genotype
-   bind_rows(map_york, map_tpb, map_cades_sculptures, map_jumby) %>%
-     filter(str_detect(genotype, "GB")) %>% select(nursery, location),
-    by = c("nursery", "location")
-  )
+                       by = c("nursery", "location", "genotype"))
 
 diff_locations <- bind_rows(
   mutate(diff_nmap, source = "nursery maps"),
@@ -366,16 +363,14 @@ outplant_genotypes <- outplants %>%
   pivot_wider(names_from = site, values_from = n_frags) %>%
   mutate(across(everything(), ~ replace_na(., 0))) %>%
   mutate(n_outplanted = rowSums(across(where(is.numeric)), na.rm = TRUE)) %>%
-  adorn_totals("row")
+  adorn_totals("row") %>%
+  clean_names() %>%
+  rename_with(~ str_replace_all(.x, "restoration_site", "outplants"))
 
 print_table(outplant_genotypes)
 ```
 
 # Genotype tracking
-
-Notes:
-
-- Need to integrate genotype-level genebank performance over time
 
 ```{r}
 # integrate genotype location(s) (nursery map), # frags per genotype (nursery monitoring) and genotype performance into one output
@@ -390,7 +385,7 @@ genotype_tracking <- collection %>%
          active = if_else(if_all(contains("_locations"), ~ . == "" | is.na(.)),
                            "N", "Y")) %>%  # genotypes with frags in nurseries
   arrange(genotype) %>%
-  select(updated, genotype, active, collection_date, collection_site, collection_lat, collection_lon, york_locations, tpb_locations, cades_locations, jumby_locations, n_frags, n_outplanted)
+  select(updated, genotype, active, collection_date, collection_site, collection_lat, collection_lon, york_island_locations, ten_pound_bay_locations, cades_sculpture_locations, jumby_bay_locations, n_frags, n_outplanted)
 
 print_table(genotype_tracking)
 
@@ -400,7 +395,7 @@ write.csv(genotype_tracking, here("restoration_monitoring", "data_outputs", "gen
 # Temp loggers
 
 ```{r}
-cades <- read_excel(here("restoration_monitoring", "data_raw", "hobo", "Hobo logger data.xlsx"), sheet = "Cades") %>%
+cades <- read_excel(here("restoration_monitoring", "data_raw", "hobo", "Hobo logger data.xlsx"), sheet = "Cades Sculptures") %>%
   clean_names() %>%
   slice(-1) %>% # remove first row 
   mutate(logger = "Cades")
@@ -410,7 +405,7 @@ tpb <- read_excel(here("restoration_monitoring", "data_raw", "hobo", "Hobo logge
   slice(-1) %>%
   mutate(logger = "Ten Pound Bay")
 
-jumby <- read_excel(here("restoration_monitoring", "data_raw", "hobo", "Hobo logger data.xlsx"), sheet = "Jumby") %>%
+jumby <- read_excel(here("restoration_monitoring", "data_raw", "hobo", "Hobo logger data.xlsx"), sheet = "Jumby Bay") %>%
   clean_names() %>%
   slice(-1) %>%
   mutate(logger = "Jumby")
@@ -471,6 +466,7 @@ ggplot(temp_data,
   scale_y_continuous(sec.axis = sec_axis(~.*9/5+32, name = "Temperature (°F)")) +
   facet_grid(. ~ logger) +
   labs(x = "", y = "Temperature (°C)", color = "Nursery") +
-  theme_bw()
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ggsave(here(fig_dir, "hobo_nursery.png"), width = 6, height = 4)
 ```
