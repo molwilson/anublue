@@ -2,7 +2,12 @@
 title: "Shark data"
 author: "Molly Wilson"
 date: "2026-10-01"
-output: html_document
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+    theme: cerulean
 ---
 
 ```{r setup, include=FALSE}
@@ -13,20 +18,24 @@ library(purrr)
 library(lubridate)
 library(janitor)
 library(sf)
-library(ggplot2)
-# library(ggspatial)
-# library(patchwork)
-```
+library(ggspatial)
+library(patchwork)
+library(DT)
 
-# Setup
-```{r}
 # set fig dir
 fig_dir <- here("tagging", "figs")
+
+# suppress warnings in knit
+knitr::opts_chunk$set(warning = FALSE)
 ```
 
 # Import + format data
 
 ## Capture data
+
+- Many corrections made in lat/lons and missing locations
+- Excluding any entries without species identified
+
 ```{r}
 # Antigua
 capture_anu <- read_excel(here("tagging", "data_raw", "AnuBlue shark tagging data.xlsx"), sheet = "Capture data") %>% 
@@ -69,12 +78,15 @@ capture_saba <- read_excel(here("tagging", "data_raw", "YAG shark tagging data.x
 
 # Merge
 capture <- bind_rows(capture_anu, capture_saba) %>%
-  mutate(across(everything(),
-      ~ na_if(as.character(.), "NA"))) %>%
-  filter(!is.na(species))
+  filter(!is.na(species)) %>%
+  mutate(across(where(is.character), ~ na_if(., "NA"))) %>%
+  mutate(id_ptt = sub("\\.0$", "", id_ptt)) # fixing .0s after some PTTs
 ```
 
 ## Effort data
+
+- Calculating proxy for fishing effort (hours fished x n buoys/hooks)
+- Still need to correct site vs. location from YAG dataset
 
 ```{r}
 ## in raw data format times as number/time -> number/plain text
@@ -108,22 +120,130 @@ effort <- bind_rows(effort_anu, effort_saba) %>%
 
 ## Movement data
 
-# Demographics
+- Missing demographic data for all Saba/SXM sat tagged sharks here
+- Omitting 23U2179 due to discrepancies with capture data
 ```{r}
-temp <- capture %>%
-  select(location) %>%
-  distinct()
-write.csv(temp, here(fig_dir, "sites.csv"))
+# Sat tag pings from Antigua Argos + Swimway data (output from shark_maps.Rmd)
+pings <- suppressMessages(read_csv(here("tagging", "data_outputs", "pings_2025.csv"))) %>%
+  select(id_ptt = pttid, date, lat, lon, category, sex, species) %>%
+  filter(id_ptt != "23U2179")
+```
+
+# Demographics
+
+## Sample description
+```{r}
+sample <- capture %>%
+  group_by(species, location) %>%
+  summarize(n = n(),
+            years_sampled = n_distinct(lubridate::year(date)),
+            .groups = "drop")
+datatable(sample, rownames = FALSE)
+
+years <- capture %>%
+  mutate(year = factor(year(date))) %>%
+  filter(!is.na(length_tl), !is.na(year)) %>%
+  group_by(species, location) %>%
+  summarise(
+    n = n(),
+    years = n_distinct(year),
+    .groups = "drop"
+  )
+```
+
+## Sex ratios
+
+- Excluding Barbuda and St. Eustatius from statistical tests due to small sample sizes
+- No significant differences in sex ratios by location except in *G. cirratum*, with only males caught in SXM
+```{r}
+sex_summary <- capture %>% 
+  filter(sex %in% c("M", "F")) %>%
+  count(species, location, sex) %>%
+  tidyr::pivot_wider(
+    names_from = sex,
+    values_from = n,
+    values_fill = 0
+  ) %>%
+  mutate(ratio = round(M / F, 2))
+datatable(sex_summary, rownames = FALSE)
+
+ggplot(data = sex_summary %>%
+         pivot_longer(
+           cols = c(F, M),
+           names_to = "sex",
+           values_to = "n"
+         ),
+       aes(x = location, y = n, fill = sex)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~ species, scales = "free_y") +
+  labs(
+    x = "Location",
+    y = "Number of sharks",
+    fill = "Sex"
+  ) +
+  scale_fill_manual(
+    values = c("F" = "#D95F6D", "M" = "#3686A0")
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "italic"),
+    panel.grid.minor = element_blank()
+  )
+
+sex_location_fishers <- capture %>% 
+  filter(sex %in% c("M", "F") & !location %in% c("Barbuda", "St. Eustatius")) %>% # sample size is too small
+  group_by(species) %>%
+  summarise(
+    p_value = round(fisher.test(table(location, sex))$p.value, 4),
+    .groups = "drop"
+  )
+datatable(sex_location_fishers, rownames = FALSE)
+```
+
+## Total length
+
+- Excluding Barbuda and St. Eustatius from statistical tests due to small sample sizes
+```{r}
+length_tl_summary <- capture %>%
+  group_by(species, location) %>%
+  summarise(
+    n = sum(!is.na(length_tl)),
+    mean = round(mean(length_tl, na.rm = TRUE), 1),
+    sd = round(sd(length_tl, na.rm = TRUE), 1),
+    median = median(length_tl, na.rm = TRUE),
+    min = min(length_tl, na.rm = TRUE),
+    max = max(length_tl, na.rm = TRUE),
+    .groups = "drop"
+  )
+datatable(length_tl_summary, rownames = FALSE)
+
+ggplot(
+  capture %>% filter(!is.na(length_tl), !is.na(location)),
+  aes(x = location, y = length_tl)
+) +
+  # geom_boxplot(outlier.shape = NA, na.rm = TRUE) +
+  geom_violin() +
+  geom_jitter(width = 0.12, height = 0, alpha = 0.7) +
+  facet_wrap(~ species) + # scales = "free_x"
+  labs(
+    x = "Location",
+    y = "Total length (cm)"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
 ```
 
 
 # Mapping
-```{r}
-library(sf)
-library(dplyr)
-library(ggplot2)
-library(ggspatial)
 
+## Captures
+
+### Prep
+
+```{r}
 sharks_sf <- capture %>%
     mutate(
     length_tl = as.numeric(length_tl)
@@ -143,42 +263,313 @@ esri_ocean <- paste0(
   "https://services.arcgisonline.com/arcgis/rest/services/",
   "Ocean/World_Ocean_Base/MapServer/tile/${z}/${y}/${x}.jpeg"
 )
-
-ggplot() +
-  annotation_map_tile(
-    type = esri_ocean,
-    progress = "none",
-    zoomin = 0
-  ) +
-  geom_sf(
-    data = sharks_sf,
-    aes(
-      color = sex,
-      size = length_tl
-    ),
-    alpha = 0.6
-  ) +
-  scale_size_continuous(
-    name = "Total length (cm)",
-    range = c(.1, 6)
-  ) +
-  scale_color_manual(
-    values = c(
-      "F" = "goldenrod1",
-      "M" = "magenta4")
-    ) +
-  labs(
-    color = "Sex",
-    x = NULL,
-    y = NULL
-  ) +
-  facet_wrap(~ species, ncol = 1) +
-  theme_bw(base_size = 12) +
-  theme(
-    panel.grid = element_blank(),
-    legend.key = element_blank()
-  )
-
-ggsave(here(fig_dir, "regional_map.png"), width = 8, height = 12)
+esri_world_imagery <- "https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}.jpeg"
 ```
+
+### By species
+```{r}
+# map by species
+ggplot() +
+  annotation_map_tile(type = esri_ocean,
+                      progress = "none",
+                      zoomin = 0) +
+  geom_sf(data = sharks_sf,
+          aes(color = species),
+          alpha = 0.7,
+          size = .7) +
+  scale_color_manual(values = c("goldenrod1", "magenta3", "limegreen", "coral")) +
+  labs(color = "Species",
+       x = NULL,
+       y = NULL) +
+  theme_bw(base_size = 16) +
+  theme(panel.grid = element_blank(),
+        legend.key = element_blank())
+
+ggsave(here(fig_dir, "map_size.png"), width = 6, height = 12)
+```
+
+### By size
+
+```{r, fig.width=8, fig.height=15, out.width="100%"}
+# Transform all shark locations to EPSG:3857
+sharks_proj <- st_transform(sharks_sf, 3857)
+
+# Shared bounding box across all species
+bb <- st_bbox(sharks_proj)
+buffer_prop <- 0.1
+
+xlim <- bb[c("xmin", "xmax")] +
+  diff(bb[c("xmin", "xmax")]) * buffer_prop * c(-1, 1)
+ylim <- bb[c("ymin", "ymax")] +
+  diff(bb[c("ymin", "ymax")]) * buffer_prop * c(-1, 1)
+
+# plot
+p_shark_size <- function(sp) {
+  ggplot() +
+    annotation_map_tile(
+      type = esri_ocean,
+      progress = "none",
+      zoomin = 0
+    ) +
+    geom_sf(
+      data = filter(sharks_proj, species == sp),
+      aes(color = length_tl),
+      alpha = 0.8, size = 1
+    ) +
+    coord_sf(
+      crs = st_crs(3857),
+      xlim = xlim,
+      ylim = ylim,
+      expand = FALSE
+    ) +
+    scale_color_gradientn(
+      colours = c("yellow", "orange", "magenta")
+    ) +
+    labs(
+      title = sp,
+      color = "Total length (cm)",
+      x = NULL,
+      y = NULL
+    ) +
+    theme_bw(base_size = 16) +
+    theme(
+      panel.grid = element_blank(),
+      legend.key = element_blank(),
+      plot.title = element_text(hjust = 0.5, face = "italic")
+    )
+}
+
+# Plot every species with the same map extent and individual scales
+species_list <- unique(na.omit(capture$species))
+
+plots <- setNames(
+  lapply(species_list, p_shark_size),
+  species_list
+)
+
+wrap_plots(plots, ncol = 1)
+
+ggsave(here(fig_dir, "map_size.png"), width = 6, height = 12)
+```
+
+## Tracking
+
+### Prep
+
+```{r}
+# link ESRI layers
+esri_ocean <- paste0('https://services.arcgisonline.com/arcgis/rest/services/','Ocean/World_Ocean_Base/MapServer/tile/${z}/${y}/${x}.jpeg')
+esri_world_imagery <- "https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}.jpeg"
+
+# function to prep data and bounding boxes based on dif data subsets
+prepare_shark_df <- function(pings, pttids = NULL, buffer_prop = 0.5, crs_out = 3857) {
+  
+  # filter PTTIDs if provided
+  data_sub <- if (!is.null(pttids)) {
+    pings %>% filter(id_ptt %in% pttids)
+  } else {
+    pings
+  }
+  
+  # convert to numeric
+  data_sub$lon <- as.numeric(data_sub$lon)
+  data_sub$lat <- as.numeric(data_sub$lat)
+  
+  # convert to sf and project
+  sf_proj <- st_as_sf(data_sub, coords = c("lon", "lat"), crs = 4326) %>%
+    st_transform(crs_out)
+  
+  # extract x, y
+  df_proj <- sf_proj %>%
+    mutate(
+      x = st_coordinates(.)[,1],
+      y = st_coordinates(.)[,2]
+    ) %>%
+    st_set_geometry(NULL)
+  
+  # calculate buffered bbox from subset
+  expand_range <- function(x, buffer = 0.05) {
+    r <- range(x, na.rm = TRUE)
+    r + diff(r) * buffer * c(-1, 1)
+  }
+  
+  lon_lim <- expand_range(data_sub$lon, buffer_prop)
+  lat_lim <- expand_range(data_sub$lat, buffer_prop)
+  
+  bb_buffered <- st_as_sfc(st_bbox(c(
+    xmin = lon_lim[1], xmax = lon_lim[2],
+    ymin = lat_lim[1], ymax = lat_lim[2]
+  ), crs = 4326))
+  
+  bb_3857 <- st_bbox(st_transform(bb_buffered, crs_out))
+  xlim_3857 <- bb_3857[c("xmin", "xmax")]
+  ylim_3857 <- bb_3857[c("ymin", "ymax")]
+  
+  list(
+    df_proj = df_proj,
+    xlim = xlim_3857,
+    ylim = ylim_3857
+  )
+}
+
+# color palette for tracks (add more if needed, or combine with linetypes?)
+shark_palette <- c(
+  "coral1",
+  "goldenrod1",
+  "seagreen1",
+  "turquoise2",
+  "magenta",
+  "azure1",
+  "orange",
+  "aquamarine",
+  "darkolivegreen1",
+  "hotpink",
+  "slategray1",
+  "orangered"
+)
+
+# function for plotting shark tracks
+p_shark <- function(pings,
+                    pttids_subset = NULL,
+                    species_filter = NULL,
+                    buffer_prop = 0.5,
+                    target_ratio = NULL,
+                    start_date = NULL,
+                    show_legend = TRUE,
+                    animate = FALSE) {
+  
+  # ---- filter data ----
+  data_sub <- pings
+  
+  if(!is.null(species_filter)) {
+    data_sub <- data_sub %>% filter(species == species_filter)
+  }
+  
+  if(!is.null(pttids_subset)) {
+    data_sub <- data_sub %>% filter(id_ptt %in% pttids_subset)
+  }
+  
+  if(!is.null(start_date)) {
+    data_sub <- data_sub %>% filter(date >= as.Date(start_date))
+  }
+  
+  # ---- projection + bbox ----
+  prep <- prepare_shark_df(data_sub, buffer_prop = buffer_prop)
+  df_proj <- prep$df_proj
+  
+  # ---- adjust bbox for target ratio if requested ----
+  xlim_adj <- prep$xlim
+  ylim_adj <- prep$ylim
+  
+  if(!is.null(target_ratio)){
+    x_rng <- diff(prep$xlim)
+    y_rng <- diff(prep$ylim)
+    
+    if((x_rng / y_rng) < target_ratio){
+      # make x wider
+      x_mid <- mean(prep$xlim)
+      x_half <- (target_ratio * y_rng) / 2
+      xlim_adj <- x_mid + c(-x_half, x_half)
+    } else {
+      # make y taller
+      y_mid <- mean(prep$ylim)
+      y_half <- x_rng / target_ratio / 2
+      ylim_adj <- y_mid + c(-y_half, y_half)
+    }
+  }
+  
+  # ---- base map ----
+  p <- ggplot() +
+    annotation_map_tile(type = esri_world_imagery,
+                        progress = "none",
+                        zoomin = 0) +
+    coord_sf(crs = st_crs(3857),
+             xlim = xlim_adj,   # USE adjusted limits
+             ylim = ylim_adj,   # USE adjusted limits
+             expand = FALSE) +
+    theme_bw(base_size = 18) +
+    theme(
+      panel.background = element_rect(fill = "steelblue"),
+      panel.grid = element_blank(),
+      legend.position = ifelse(animate, "none", "right"),
+      legend.key = element_blank()
+    ) +
+    geom_path(
+      data = df_proj,
+      aes(x = x, y = y, group = id_ptt, color = id_ptt),
+      linewidth = 1,
+      alpha = 0.7,
+      linetype = "11"
+    ) +
+    geom_point(
+      data = df_proj,
+      aes(x = x, y = y, group = id_ptt, color = id_ptt, shape = category),
+      size = ifelse(animate, 2, 1),
+      alpha = 0.7
+    ) +
+    scale_shape_manual(
+      name = "Type",
+      values = c(
+        "Deployment" = 8,
+        "Ping" = 16)
+    ) +
+    labs(x = NULL, y = NULL)
+  
+  # ---- automatic palette ----
+  pttid_levels <- sort(unique(df_proj$id_ptt))
+  colors <- shark_palette[seq_along(pttid_levels)] # Trim palette to needed length
+  colors <- setNames(colors, pttid_levels) # Name colors so they match PTTIDs
+  p <- p + scale_color_manual(values = colors,
+                              name = "PTT ID")
+  
+  # safety check
+  if(length(pttid_levels) > length(shark_palette)) {
+    stop("Not enough colors in shark_palette! Add more to shark_palette vector.")
+  }
+  
+  # ---- turn animation ON if requested ----
+  if(animate) {
+    p <- p +
+      labs(title = 'Shark movement: {format(frame_along, "%B %d, %Y")}') +
+      transition_reveal(along = date) +
+      theme(
+        plot.title = element_text(
+          hjust = 0,
+          size = 26,
+          face = "bold"
+        )
+      )
+  }
+  
+  # ---- turn legend ON/OFF if requested ----
+  if (!show_legend) {
+    p <- p + theme(legend.position = "none")
+  }
+  
+  return(p)
+}
+```
+
+### By species
+
+```{r}
+# G. cuvier
+p_shark(pings, 
+                           species_filter  = "Galeocerdo cuvier",
+                           target_ratio = 1,
+                            buffer_prop = .2) +
+  labs(title = "Galeocerdo cuvier") +
+  theme(plot.title = element_text(hjust = 0.5, face = "italic"))
+ggsave(here(fig_dir, "shark_track_gcuvier.png"), width = 10, height = 8)
+
+# C. falciformis
+p_shark(pings, 
+                            species_filter = "Carcharhinus falciformis",
+                            target_ratio = 1,
+                            buffer_prop = .2) +
+  labs(title = "Carcharhinus falciformis") +
+  theme(plot.title = element_text(hjust = 0.5, face = "italic"))
+ggsave(here(fig_dir, "shark_track_cfalciformis.png"), width = 10, height = 8)
+```
+
 

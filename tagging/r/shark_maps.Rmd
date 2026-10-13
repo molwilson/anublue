@@ -33,7 +33,7 @@ library(patchwork)
 tagging <- read_excel(here("tagging", "data_raw", "AnuBlue shark tagging data.xlsx"), sheet = "Capture data") %>% 
   clean_names() %>%
   filter(!str_detect(as.character(date), "[A-Za-z]") & sat_ptt != "NA") %>% # remove any placeholder dates
-  mutate(date = as.Date(as.numeric(date), origin = "1899-12-30"),
+  mutate(date = as.Date(date),
          length_sex = paste0(tl, "cm-", sex)
          ) %>%
   select(pttid = sat_ptt, date, lat = latitude, lon = longitude, sex, species, length_tot = tl, length_sex) # add length_sex_pub back in if needed
@@ -158,6 +158,7 @@ shark_data <- left_join(temps, depth, by = c("pttid", "date")) %>%
               select(pttid, sex, species, length_tot, length_sex), 
             by = c("pttid"))
 ```
+
 ## Raw Swimway data
 
 ```{r}
@@ -176,6 +177,8 @@ pings_swimway <- read_excel(here("tagging", "data_raw", "Sattag data OpSwimaway 
 pings <- rbind(pings_argos, pings_swimway) %>%
   mutate(species = as.character(species)) %>% # for filtering in maps
   arrange(date)
+
+write.csv(pings, here("tagging", "data_outputs", "pings_2025.csv"))
 ```
 
 
