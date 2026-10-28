@@ -10,7 +10,7 @@ library(later)
 
 ################# set wd outside of app code #################
 # setwd("mapping/r/website_map")
-# setwd("~/Github/emc/mapping/r/website_map")
+# setwd("~/Github/anublue/mapping/r/website_map")
 
 ################################## data ##################################
 
@@ -318,14 +318,14 @@ shinyApp(ui, server)
 ############################## webshot ##############################
 
 # library(webshot2)
-webshot(
-  url = "https://mowils.shinyapps.io/anublue-map/",
-  file = "map_app.png",
-  vwidth = 1600,
-  vheight = 1000,
-  zoom = 2,
-  delay = 10
-)
+# webshot(
+#   url = "https://mowils.shinyapps.io/anublue-map/",
+#   file = "map_app.png",
+#   vwidth = 1600,
+#   vheight = 1000,
+#   zoom = 2,
+#   delay = 10
+# )
 
 ############################## archive ##############################
 

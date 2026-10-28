@@ -144,7 +144,8 @@ data_mon <- data_mon_dpt %>%
   ) %>%
   ungroup() %>%
   mutate(date_label = format(date_label, "%b %Y")) %>%
-  select(-c(month_n, month_row, next_month, next_month_exists))
+  select(-c(month_n, month_row, next_month, next_month_exists)) %>%
+  distinct()
   
 #### check samples per date_label - still some issues here?? ####
 chk <- data_mon %>%
@@ -593,6 +594,8 @@ ggsave(here(fig_folder, "entero_chlor.png"), width = 6, height = 3)
 ```
 
 ## Precipitation
+
+- dead battery between 6/5-6/18/26
 
 Didn't find much relationship between precipitation and any parameters at this point, it will be helpful to have more data over time. Including exploratory graphs at this point for reference.
 
