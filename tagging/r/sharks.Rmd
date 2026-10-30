@@ -79,8 +79,9 @@ capture_saba <- read_excel(here("tagging", "data_raw", "YAG shark tagging data.x
 # Merge
 capture <- bind_rows(capture_anu, capture_saba) %>%
   filter(!is.na(species)) %>%
-  mutate(across(where(is.character), ~ na_if(., "NA"))) %>%
-  mutate(id_ptt = sub("\\.0$", "", id_ptt)) # fixing .0s after some PTTs
+  mutate(date = ymd(date),
+         across(where(is.character), ~ na_if(., "NA")),
+         id_ptt = sub("\\.0$", "", id_ptt)) # fixing .0s after some PTTs
 ```
 
 ## Effort data
@@ -110,12 +111,15 @@ effort_saba <- read_excel(here("tagging", "data_raw", "YAG shark tagging data.xl
          )) %>%
   mutate(set_duration = hms::as_hms(time_haul_cor - time_in_cor)) %>%
   filter(set_duration > 0) %>%
+  mutate() # convert all non-numeric hook numbers to 1
+  tidyr::uncount(hook_numbers) %>% 
   select(date, location, set_duration)
 
 # Merge
 effort <- bind_rows(effort_anu, effort_saba) %>%
   mutate(across(everything(),
-      ~ na_if(as.character(.), "NA")))
+      ~ na_if(as.character(.), "NA")),
+      date = ymd(date))
 ```
 
 ## Movement data
@@ -234,6 +238,16 @@ ggplot(
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
+```
+
+# CPUE
+```{r}
+cpue <- effort %>%
+  group_by(date, location) %>%
+  summarize(effort = sum(set_duration))
+  right_join(capture %>%
+               group_by(date, location, species) %>%
+               summarize(catch = n()), by = c("date", "location"))
 ```
 
 
