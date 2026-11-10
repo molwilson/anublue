@@ -22,8 +22,8 @@ Notes
 - currently an issue with Jan file - creates character date, using previously generated historical .csv for now
 
 ```{r}
-file_raw <- here("water_quality", "data_raw", "Kor Measurement File Export - Oct 2026.csv")
-file_clean <- here("water_quality", "data_outputs", "kor_exports", "ysi_clean_oct2026.csv")
+file_raw <- here("water_quality", "data_raw", "Kor Measurement File Export - Nov 2026.csv")
+file_clean <- here("water_quality", "data_outputs", "kor_exports", "ysi_clean_nov2026.csv")
 
 # 1. determine encoding of new file from Kor exports
 encoding <- guess_encoding(file_raw)
